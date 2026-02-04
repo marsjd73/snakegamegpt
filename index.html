@@ -75,7 +75,7 @@
 
         <div class="row">
           <label for="food">Food on screen</label>
-          <input id="food" type="range" min="1" max="6" step="1">
+          <input id="food" type="range" min="1" max="15" step="1">
           <div class="small">Current: <span id="foodVal"></span></div>
         </div>
 
@@ -133,9 +133,8 @@ let foodCount = 1;
 let state = "menu";   // menu, options, game, dead
 let snake, dir, pendingDir, foods, score, timer, paused;
 
-// Smooth rendering state (NEW)
+// Smooth rendering state
 let prevSnake = null;
-let prevFoods = null;
 let animStart = 0;
 let animT = 1;
 
@@ -185,16 +184,14 @@ function resetGame() {
   scoreEl.textContent = score;
   spawnFoods();
 
-  // Smooth init (NEW)
+  // Smooth init
   prevSnake = snake.slice();
-  prevFoods = foods.slice();
   animStart = performance.now();
   animT = 1;
 }
 
 function startTimer() {
   stopTimer();
-  // Align smooth timing with tick timing (NEW)
   animStart = performance.now();
   animT = 1;
   timer = setInterval(tick, stepMs);
@@ -243,9 +240,8 @@ function spawnFoods() {
 function tick() {
   if (state !== "game" || paused) return;
 
-  // Save previous state for smooth drawing (NEW)
+  // Save previous state for smooth snake drawing
   prevSnake = snake.slice();
-  prevFoods = foods.slice();
   animStart = performance.now();
   animT = 0;
 
@@ -284,23 +280,15 @@ function tick() {
   } else {
     snake.pop();
   }
-
-  // NOTE: do NOT call draw() here anymore — animation loop draws smoothly (NEW)
 }
 
 function draw() {
   drawBackground();
 
-  // foods (grid-locked; interpolates only if array changes mid-step)
+  // foods (NO interpolation so they do not appear to shift)
   ctx.fillStyle = "#f2d7a0";
   for (let i = 0; i < foods.length; i++) {
-    let fx = foods[i].x;
-    let fy = foods[i].y;
-    if (prevFoods && prevFoods[i]) {
-      fx = lerp(prevFoods[i].x, foods[i].x, animT);
-      fy = lerp(prevFoods[i].y, foods[i].y, animT);
-    }
-    ctx.fillRect(fx * SIZE, fy * SIZE, SIZE, SIZE);
+    ctx.fillRect(foods[i].x * SIZE, foods[i].y * SIZE, SIZE, SIZE);
   }
 
   // snake (smooth between grid squares)
@@ -316,7 +304,7 @@ function draw() {
   }
 }
 
-// Smooth animation loop (NEW)
+// Smooth animation loop
 function animate(now) {
   if (state === "game" && !paused) {
     animT = (now - animStart) / stepMs;

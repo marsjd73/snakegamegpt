@@ -20,7 +20,7 @@
       border: 1px solid rgba(255,255,255,.12);
       border-radius: 14px;
       padding: 18px;
-      min-width: 260px;
+      min-width: 280px;
       box-shadow: 0 10px 30px rgba(0,0,0,.4);
     }
     .title { font-size: 28px; font-weight: 800; margin: 0 0 10px; }
@@ -44,8 +44,29 @@
       display: flex;
       justify-content: space-between;
       font-weight: 700;
+      width: 404px;
     }
     .kbd { padding: 2px 6px; border: 1px solid #666; border-radius: 6px; background: rgba(255,255,255,.06); }
+
+    /* Countdown */
+    #countdownText {
+      font-size: 64px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      text-shadow: 0 6px 18px rgba(0,0,0,.5);
+    }
+
+    /* Options: small select styling */
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.15);
+      background: rgba(255,255,255,.06);
+      color: #fff;
+      font-weight: 800;
+    }
+    option { color: #000; }
   </style>
 </head>
 <body>
@@ -68,6 +89,17 @@
         <div class="title">Options</div>
 
         <div class="row">
+          <label for="difficulty">Difficulty</label>
+          <select id="difficulty">
+            <option value="custom">Custom (slider)</option>
+            <option value="easy">Easy</option>
+            <option value="normal">Normal</option>
+            <option value="hard">Hard</option>
+          </select>
+          <div class="small">Presets set speed automatically. Custom uses the slider.</div>
+        </div>
+
+        <div class="row">
           <label for="speed">Speed (ms per step)</label>
           <input id="speed" type="range" min="60" max="220" step="10">
           <div class="small">Lower = faster. Current: <span id="speedVal"></span> ms</div>
@@ -79,7 +111,42 @@
           <div class="small">Current: <span id="foodVal"></span></div>
         </div>
 
+        <div class="row">
+          <label for="varietyToggle">Food variety (gold food)</label>
+          <select id="varietyToggle">
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+          <div class="small">Gold food is rarer and worth 3 points.</div>
+        </div>
+
+        <div class="row">
+          <label for="soundToggle">Sound</label>
+          <select id="soundToggle">
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </div>
+
         <div class="row"><button id="backBtn" class="secondary">Back</button></div>
+      </div>
+    </div>
+
+    <!-- PAUSE SCREEN -->
+    <div id="pause" class="overlay">
+      <div class="panel">
+        <div class="title">Paused</div>
+        <div class="row small">Press <span class="kbd">P</span> to resume.</div>
+        <div class="row"><button id="resumeBtn">Resume</button></div>
+        <div class="row"><button id="pauseToMenuBtn" class="secondary">Exit to Main Menu</button></div>
+      </div>
+    </div>
+
+    <!-- COUNTDOWN -->
+    <div id="countdown" class="overlay">
+      <div class="panel" style="min-width: 220px; text-align:center;">
+        <div id="countdownText">3</div>
+        <div class="small" style="margin-top:8px;">Get ready…</div>
       </div>
     </div>
 
@@ -88,14 +155,16 @@
       <div class="panel">
         <div class="title">You Died</div>
         <div class="row small">Score: <span id="finalScore">0</span></div>
+        <div class="row small">High Score: <span id="highScoreDead">0</span></div>
         <div class="row"><button id="respawnBtn">Respawn</button></div>
         <div class="row"><button id="toMenuBtn" class="secondary">Exit to Main Menu</button></div>
       </div>
     </div>
   </div>
 
-  <div id="hud" style="width:404px;">
+  <div id="hud">
     <div>Score: <span id="score">0</span></div>
+    <div>High: <span id="high">0</span></div>
     <div class="small">Pause: <span class="kbd">P</span></div>
   </div>
 
@@ -105,6 +174,8 @@ const ctx = canvas.getContext("2d");
 
 const menuOverlay = document.getElementById("menu");
 const optionsOverlay = document.getElementById("options");
+const pauseOverlay = document.getElementById("pause");
+const countdownOverlay = document.getElementById("countdown");
 const deadOverlay = document.getElementById("dead");
 
 const playBtn = document.getElementById("playBtn");
@@ -113,24 +184,42 @@ const backBtn = document.getElementById("backBtn");
 const respawnBtn = document.getElementById("respawnBtn");
 const toMenuBtn = document.getElementById("toMenuBtn");
 
+const resumeBtn = document.getElementById("resumeBtn");
+const pauseToMenuBtn = document.getElementById("pauseToMenuBtn");
+
 const speedSlider = document.getElementById("speed");
 const foodSlider = document.getElementById("food");
 const speedVal = document.getElementById("speedVal");
 const foodVal = document.getElementById("foodVal");
 
+const difficultySel = document.getElementById("difficulty");
+const soundSel = document.getElementById("soundToggle");
+const varietySel = document.getElementById("varietyToggle");
+
 const scoreEl = document.getElementById("score");
 const finalScoreEl = document.getElementById("finalScore");
+const highEl = document.getElementById("high");
+const highDeadEl = document.getElementById("highScoreDead");
+const countdownText = document.getElementById("countdownText");
 
 const SIZE = 20;
 const COLS = canvas.width / SIZE;
 const ROWS = canvas.height / SIZE;
 
 // Options (defaults)
-let stepMs = 120;     // lower = faster
+let stepMs = 120;       // lower = faster
 let foodCount = 1;
+let difficulty = "custom";   // custom/easy/normal/hard
+let soundOn = true;
+let varietyOn = true;
+
+// High score (saved)
+let highScore = Number(localStorage.getItem("snake_highscore") || 0);
+highEl.textContent = highScore;
+highDeadEl.textContent = highScore;
 
 // Game state
-let state = "menu";   // menu, options, game, dead
+let state = "menu";   // menu, options, countdown, game, pause, dead
 let snake, dir, pendingDir, foods, score, timer, paused;
 
 // Smooth rendering state
@@ -143,8 +232,21 @@ function lerp(a, b, t) { return a + (b - a) * t; }
 function show(overlay) {
   menuOverlay.style.display = "none";
   optionsOverlay.style.display = "none";
+  pauseOverlay.style.display = "none";
+  countdownOverlay.style.display = "none";
   deadOverlay.style.display = "none";
   if (overlay) overlay.style.display = "flex";
+}
+
+function drawBackground() {
+  // Board fill
+  ctx.fillStyle = "#556B2F";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Walls border (danger)
+  ctx.strokeStyle = "#8b2e2e";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(0, 0, canvas.width, canvas.height);
 }
 
 function startMenu() {
@@ -159,30 +261,90 @@ function startOptions() {
   show(optionsOverlay);
 }
 
-function startGame() {
+function startCountdownThenGame() {
+  state = "countdown";
+  show(countdownOverlay);
+
+  // Make sure we're not ticking while counting down
+  stopTimer();
+  paused = true;
+
+  let n = 3;
+  countdownText.textContent = n;
+
+  const interval = setInterval(() => {
+    n--;
+    if (n > 0) {
+      countdownText.textContent = n;
+    } else {
+      clearInterval(interval);
+      state = "game";
+      show(null);
+      paused = false;
+      startTimer();
+      // draw will happen via animation loop
+    }
+  }, 600);
+}
+
+function startGameFresh() {
+  // start from menu -> game with countdown
   state = "game";
   show(null);
   resetGame();
-  startTimer();
-  draw();
+  startCountdownThenGame();
+}
+
+function respawn() {
+  // respawn from death screen with countdown
+  resetGame();
+  startCountdownThenGame();
+}
+
+function pauseGame() {
+  if (state !== "game") return;
+  state = "pause";
+  paused = true;
+  show(pauseOverlay);
+}
+
+function resumeGame() {
+  if (state !== "pause") return;
+  state = "game";
+  paused = false;
+  show(null);
 }
 
 function die() {
   state = "dead";
   stopTimer();
+
+  // Update high score
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem("snake_highscore", String(highScore));
+    highEl.textContent = highScore;
+  }
+
   finalScoreEl.textContent = score;
+  highDeadEl.textContent = highScore;
   show(deadOverlay);
+
+  if (soundOn) playSound("die");
 }
 
 function resetGame() {
   snake = [{x: 10, y: 10}];
   dir = {x: 1, y: 0};
   pendingDir = dir;
-  foods = [];
+
   score = 0;
-  paused = false;
   scoreEl.textContent = score;
+
+  foods = [];
   spawnFoods();
+
+  paused = false;
 
   // Smooth init
   prevSnake = snake.slice();
@@ -200,11 +362,6 @@ function startTimer() {
 function stopTimer() {
   if (timer) clearInterval(timer);
   timer = null;
-}
-
-function drawBackground() {
-  ctx.fillStyle = "#556B2F";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 function samePos(a, b) { return a.x === b.x && a.y === b.y; }
@@ -233,8 +390,15 @@ function spawnOneFood() {
 function spawnFoods() {
   foods = [];
   for (let i = 0; i < foodCount; i++) {
-    foods.push(spawnOneFood());
+    foods.push(makeFood());
   }
+}
+
+function makeFood() {
+  const pos = spawnOneFood();
+  // variety: 15% gold (worth 3), else normal (worth 1)
+  const gold = varietyOn && (Math.random() < 0.15);
+  return { x: pos.x, y: pos.y, value: gold ? 3 : 1, type: gold ? "gold" : "normal" };
 }
 
 function tick() {
@@ -271,23 +435,76 @@ function tick() {
   }
 
   if (ateIndex !== -1) {
-    score++;
+    const eaten = foods[ateIndex];
+
+    score += eaten.value;
     scoreEl.textContent = score;
 
+    if (score > highScore) {
+      highScore = score;
+      localStorage.setItem("snake_highscore", String(highScore));
+      highEl.textContent = highScore;
+    }
+
     foods.splice(ateIndex, 1);
-    foods.push(spawnOneFood());
+    foods.push(makeFood());
     // snake grows (no pop)
+
+    if (soundOn) playSound("eat", eaten.type === "gold");
   } else {
     snake.pop();
   }
+}
+
+function drawSnakeHead(x, y, nextDir) {
+  // base body
+  ctx.fillRect(x, y, SIZE, SIZE);
+
+  // eyes (simple)
+  ctx.fillStyle = "rgba(255,255,255,.9)";
+  const pad = 5;
+  const eye = 3;
+
+  let ex1 = x + pad, ey1 = y + pad;
+  let ex2 = x + SIZE - pad - eye, ey2 = y + pad;
+
+  // rotate eye placement by direction (keep it simple)
+  // dir: right(1,0), left(-1,0), up(0,-1), down(0,1)
+  if (nextDir.x === -1) {
+    // left
+    ex1 = x + pad; ey1 = y + pad;
+    ex2 = x + pad; ey2 = y + SIZE - pad - eye;
+  } else if (nextDir.y === -1) {
+    // up
+    ex1 = x + pad; ey1 = y + pad;
+    ex2 = x + SIZE - pad - eye; ey2 = y + pad;
+  } else if (nextDir.y === 1) {
+    // down
+    ex1 = x + pad; ey1 = y + SIZE - pad - eye;
+    ex2 = x + SIZE - pad - eye; ey2 = y + SIZE - pad - eye;
+  } else {
+    // right
+    ex1 = x + SIZE - pad - eye; ey1 = y + pad;
+    ex2 = x + SIZE - pad - eye; ey2 = y + SIZE - pad - eye;
+  }
+
+  ctx.fillRect(ex1, ey1, eye, eye);
+  ctx.fillRect(ex2, ey2, eye, eye);
+
+  // restore snake color for the rest of drawing
+  ctx.fillStyle = "#0b3d0b";
 }
 
 function draw() {
   drawBackground();
 
   // foods (NO interpolation so they do not appear to shift)
-  ctx.fillStyle = "#f2d7a0";
   for (let i = 0; i < foods.length; i++) {
+    if (foods[i].type === "gold") {
+      ctx.fillStyle = "#f5d34a";
+    } else {
+      ctx.fillStyle = "#f2d7a0";
+    }
     ctx.fillRect(foods[i].x * SIZE, foods[i].y * SIZE, SIZE, SIZE);
   }
 
@@ -296,11 +513,21 @@ function draw() {
   for (let i = 0; i < snake.length; i++) {
     let x = snake[i].x;
     let y = snake[i].y;
+
     if (prevSnake && prevSnake[i]) {
       x = lerp(prevSnake[i].x, snake[i].x, animT);
       y = lerp(prevSnake[i].y, snake[i].y, animT);
     }
-    ctx.fillRect(x * SIZE, y * SIZE, SIZE, SIZE);
+
+    const px = x * SIZE;
+    const py = y * SIZE;
+
+    if (i === 0) {
+      // head with eyes; direction is pendingDir for responsiveness
+      drawSnakeHead(px, py, pendingDir);
+    } else {
+      ctx.fillRect(px, py, SIZE, SIZE);
+    }
   }
 }
 
@@ -310,34 +537,129 @@ function animate(now) {
     animT = (now - animStart) / stepMs;
     if (animT > 1) animT = 1;
     draw();
+  } else if (state === "menu" || state === "options" || state === "pause" || state === "dead" || state === "countdown") {
+    // keep background fresh behind overlays
+    draw();
   }
   requestAnimationFrame(animate);
 }
 
+/* ---------------------------
+   Sound (simple oscillator)
+   --------------------------- */
+let audioCtx = null;
+function beep(freq, ms, type) {
+  if (!soundOn) return;
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type || "sine";
+  o.frequency.value = freq;
+
+  g.gain.value = 0.0001;
+  o.connect(g);
+  g.connect(audioCtx.destination);
+
+  const t0 = audioCtx.currentTime;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.15, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + ms/1000);
+
+  o.start();
+  o.stop(t0 + ms/1000 + 0.02);
+}
+
+function playSound(kind, isGold) {
+  if (!soundOn) return;
+  if (kind === "eat") {
+    if (isGold) {
+      beep(880, 90, "triangle");
+      setTimeout(() => beep(1320, 80, "triangle"), 60);
+    } else {
+      beep(660, 70, "square");
+    }
+  } else if (kind === "die") {
+    beep(220, 140, "sawtooth");
+    setTimeout(() => beep(110, 180, "sawtooth"), 120);
+  }
+}
+
 // UI events
-playBtn.addEventListener("click", startGame);
+playBtn.addEventListener("click", startGameFresh);
 optionsBtn.addEventListener("click", () => { startOptions(); });
 backBtn.addEventListener("click", startMenu);
 
-respawnBtn.addEventListener("click", startGame);
+respawnBtn.addEventListener("click", respawn);
 toMenuBtn.addEventListener("click", startMenu);
 
-// Options sliders
+resumeBtn.addEventListener("click", resumeGame);
+pauseToMenuBtn.addEventListener("click", startMenu);
+
+// Options sync
 function syncOptionsUI() {
   speedSlider.value = stepMs;
   foodSlider.value = foodCount;
   speedVal.textContent = stepMs;
   foodVal.textContent = foodCount;
+
+  difficultySel.value = difficulty;
+  soundSel.value = soundOn ? "on" : "off";
+  varietySel.value = varietyOn ? "on" : "off";
 }
+
+function applyDifficultyPreset() {
+  if (difficulty === "easy") stepMs = 180;
+  else if (difficulty === "normal") stepMs = 120;
+  else if (difficulty === "hard") stepMs = 80;
+  // custom => keep slider value
+
+  speedSlider.value = stepMs;
+  speedVal.textContent = stepMs;
+  if (state === "game") startTimer();
+}
+
+// Difficulty change
+difficultySel.addEventListener("change", () => {
+  difficulty = difficultySel.value;
+  if (difficulty === "custom") {
+    // let slider control it
+    stepMs = Number(speedSlider.value);
+    speedVal.textContent = stepMs;
+    if (state === "game") startTimer();
+  } else {
+    applyDifficultyPreset();
+  }
+});
+
+// Speed slider
 speedSlider.addEventListener("input", () => {
   stepMs = Number(speedSlider.value);
   speedVal.textContent = stepMs;
-  if (state === "game") startTimer(); // apply immediately if playing
+  difficulty = "custom";
+  difficultySel.value = "custom";
+  if (state === "game") startTimer();
 });
+
+// Food slider
 foodSlider.addEventListener("input", () => {
   foodCount = Number(foodSlider.value);
   foodVal.textContent = foodCount;
-  if (state === "game") spawnFoods(); // apply immediately if playing
+  if (state === "game") spawnFoods();
+});
+
+// Variety toggle
+varietySel.addEventListener("change", () => {
+  varietyOn = (varietySel.value === "on");
+  if (state === "game") {
+    // Re-roll foods to match new setting
+    spawnFoods();
+  }
+});
+
+// Sound toggle
+soundSel.addEventListener("change", () => {
+  soundOn = (soundSel.value === "on");
 });
 
 // Keyboard controls
@@ -345,7 +667,8 @@ document.addEventListener("keydown", (e) => {
   const k = e.key;
 
   if (k === "p" || k === "P") {
-    if (state === "game") paused = !paused;
+    if (state === "game") pauseGame();
+    else if (state === "pause") resumeGame();
     return;
   }
 
